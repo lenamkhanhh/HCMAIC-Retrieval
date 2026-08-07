@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+      - run: uv sync --extra dev --extra artifacts
+      - run: uv run pytest --cov=hcmaic_retrieval --cov-report=term-missing
+      - run: uv run ruff check src tests
+      - run: uv run mypy src
+

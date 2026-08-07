@@ -1,0 +1,31 @@
+dataset:
+  version: batch1-kaggle-v5
+  root: D:/Kaggle/aic26-rag/aic26-rag
+  metadata_path: keyframe_meta.parquet
+  dense_index_path: faiss_flat_ip.index
+  shot_text_path: shot_text.parquet
+  ocr_bm25_path: bm25
+  expected_frames: 233062
+  expected_dense_dim: 1152
+models:
+  visual:
+    provider: siglip2
+    model_id: google/siglip2-so400m-patch16-384
+    revision: main
+    normalize: true
+    max_length: 64
+  reranker:
+    provider: identity
+retrieval:
+  candidate_k: 1000
+  rrf_k: 60
+  weights:
+    visual: 1.0
+    ocr: 1.0
+    shot_text: 0.6
+    object: 0.5
+    asr: 0.5
+  max_per_video: 20
+  min_frame_gap: 1
+quality_status: UNVALIDATED_ON_HCMAIC
+

@@ -106,3 +106,11 @@ class KISRetriever:
             encoder_name=self.encoder.name,
             encoder_version=self.encoder.version,
         )
+
+    def search_text(self, text: str, *, top_k: int) -> list[Candidate]:
+        """Shared adapter used by TRAKE and Q&A."""
+
+        response = self.search(
+            KISQuery(query_id="internal-text-search", task="TKIS", text=text, top_k=top_k)
+        )
+        return response.results

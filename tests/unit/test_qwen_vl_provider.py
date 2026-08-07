@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from hcmaic_retrieval.contracts import Candidate, ChannelEvidence, FrameRecord
 from hcmaic_retrieval.providers.qwen_vl import Qwen3VLAnswerProvider
 
@@ -90,4 +88,3 @@ def test_qwen_vl_provider_rejects_evidence_path_escape(tmp_path) -> None:
         assert "outside image_root" in str(exc)
     else:
         raise AssertionError("path escape was not rejected")
-

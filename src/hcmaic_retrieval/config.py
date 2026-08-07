@@ -63,9 +63,18 @@ class RerankerConfig(BaseModel):
     top_n: int = Field(default=50, ge=1)
 
 
+class QAModelConfig(BaseModel):
+    enabled: bool = False
+    provider: str = "qwen3vl"
+    model_id: str = "Qwen/Qwen3-VL-2B-Instruct"
+    revision: str = "main"
+    max_new_tokens: int = Field(default=128, ge=1, le=1024)
+
+
 class ModelsConfig(BaseModel):
     visual: VisualModelConfig = Field(default_factory=VisualModelConfig)
     reranker: RerankerConfig = Field(default_factory=RerankerConfig)
+    qa: QAModelConfig = Field(default_factory=QAModelConfig)
 
 
 class RetrievalConfig(BaseModel):
@@ -100,4 +109,3 @@ def load_config(path: Path) -> AppConfig:
     if not isinstance(raw, dict):
         raise ValueError("configuration root must be a mapping")
     return AppConfig.model_validate(raw)
-

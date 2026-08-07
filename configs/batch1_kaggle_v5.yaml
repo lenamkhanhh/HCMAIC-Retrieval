@@ -16,6 +16,12 @@ models:
     max_length: 64
   reranker:
     provider: identity
+  qa:
+    enabled: false
+    provider: qwen3vl
+    model_id: Qwen/Qwen3-VL-2B-Instruct
+    revision: main
+    max_new_tokens: 128
 retrieval:
   candidate_k: 1000
   rrf_k: 60
@@ -28,4 +34,3 @@ retrieval:
   max_per_video: 20
   min_frame_gap: 1
 quality_status: UNVALIDATED_ON_HCMAIC
-

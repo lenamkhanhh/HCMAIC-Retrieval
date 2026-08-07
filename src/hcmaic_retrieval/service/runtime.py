@@ -17,8 +17,13 @@ from hcmaic_retrieval.channels import (
 )
 from hcmaic_retrieval.config import AppConfig, DatasetConfig
 from hcmaic_retrieval.contracts import FrameRecord, KISQuery
-from hcmaic_retrieval.providers import ProviderStatus
+from hcmaic_retrieval.providers import ProviderStatus, Qwen3VLAnswerProvider
 from hcmaic_retrieval.providers.siglip2 import Siglip2Encoder
+from hcmaic_retrieval.reranking import (
+    CrossEncoderReranker,
+    IdentityReranker,
+    Reranker,
+)
 from hcmaic_retrieval.retrieval import BM25Index, KISRetriever, NumpyDenseIndex
 from hcmaic_retrieval.retrieval.kis import KISSearchResponse, LexicalSearchIndex
 from hcmaic_retrieval.retrieval.persisted import Bm25sIndex, FaissDenseIndex
@@ -290,6 +295,16 @@ def build_batch1_runtime(config: AppConfig, *, device: str = "cpu") -> PipelineR
         dataset=config.dataset, frames=report.catalog
     )
     lexical.update(optional_indexes)
+    reranker: Reranker
+    if config.models.reranker.provider == "identity":
+        reranker = IdentityReranker()
+    elif config.models.reranker.provider == "cross_encoder":
+        reranker = CrossEncoderReranker.from_pretrained(
+            model_id=config.models.reranker.model_id or "BAAI/bge-reranker-v2-m3",
+            top_n=config.models.reranker.top_n,
+        )
+    else:
+        raise ValueError(f"unsupported reranker provider {config.models.reranker.provider!r}")
     kis = KISRetriever(
         encoder=encoder,
         dense=dense,
@@ -299,7 +314,19 @@ def build_batch1_runtime(config: AppConfig, *, device: str = "cpu") -> PipelineR
         rrf_k=config.retrieval.rrf_k,
         max_per_video=config.retrieval.max_per_video,
         min_frame_gap=config.retrieval.min_frame_gap,
+        reranker=reranker,
     )
+    answerer = None
+    if config.models.qa.enabled:
+        if config.models.qa.provider != "qwen3vl":
+            raise ValueError(f"unsupported QA provider {config.models.qa.provider!r}")
+        answerer = Qwen3VLAnswerProvider.from_pretrained(
+            model_id=config.models.qa.model_id,
+            revision=config.models.qa.revision,
+            image_root=config.dataset.root,
+            device=device,
+            max_new_tokens=config.models.qa.max_new_tokens,
+        )
     ocr_available = "ocr" in lexical
     providers = {
         "visual": ProviderStatus(
@@ -317,15 +344,16 @@ def build_batch1_runtime(config: AppConfig, *, device: str = "cpu") -> PipelineR
         "shot_text": optional_statuses["shot_text"],
         "qa": ProviderStatus(
             name="qa",
-            version="evidence-only",
-            available=False,
-            reason="VLM answer provider is not configured",
+            version=answerer.version if answerer is not None else "evidence-only",
+            available=answerer is not None,
+            reason=None if answerer is not None else "VLM answer provider is not configured",
+            device=device if answerer is not None else None,
         ),
     }
     return PipelineRuntime(
         kis=kis,
         trake=TRAKEEngine(retriever=kis),
-        qa=QAEngine(retriever=kis),
+        qa=QAEngine(retriever=kis, answerer=answerer),
         catalog=catalog,
         providers=providers,
         artifact_version=config.dataset.version,

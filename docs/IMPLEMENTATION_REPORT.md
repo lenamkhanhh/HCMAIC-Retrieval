@@ -34,6 +34,7 @@ Verified on Windows with Python 3.11.15:
 - total source coverage: `88.70%` (required threshold: `80%`);
 - Ruff: pass;
 - mypy: pass across 34 source files;
+- source distribution and Python wheel build: pass;
 - configuration inheritance: all local CPU, 24 GB GPU, and competition profiles load;
 - KIS textual smoke: pass;
 - TRAKE ordered-event smoke: pass;

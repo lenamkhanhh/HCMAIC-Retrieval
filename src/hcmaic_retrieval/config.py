@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePath
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -102,10 +102,35 @@ class AppConfig(BaseModel):
     ] = "UNVALIDATED_ON_HCMAIC"
 
 
-def load_config(path: Path) -> AppConfig:
-    """Load a YAML profile without executing custom YAML constructors."""
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+def _load_yaml_profile(path: Path, seen: frozenset[Path]) -> dict[str, Any]:
+    resolved = path.resolve()
+    if resolved in seen:
+        raise ValueError(f"configuration extends cycle at {resolved}")
+    raw = yaml.safe_load(resolved.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError("configuration root must be a mapping")
+    parent = raw.pop("extends", None)
+    if parent is None:
+        return raw
+    if not isinstance(parent, str) or not parent.strip():
+        raise ValueError("extends must be a non-blank relative YAML path")
+    parent_path = (resolved.parent / parent).resolve()
+    base = _load_yaml_profile(parent_path, seen | {resolved})
+    return _deep_merge(base, raw)
+
+
+def load_config(path: Path) -> AppConfig:
+    """Load a safe YAML profile with optional recursive deep-merge inheritance."""
+
+    raw = _load_yaml_profile(path, frozenset())
     return AppConfig.model_validate(raw)

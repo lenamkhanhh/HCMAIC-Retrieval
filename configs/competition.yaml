@@ -1,0 +1,5 @@
+extends: batch1_kaggle_v5.yaml
+retrieval:
+  candidate_k: 1000
+  max_per_video: 20
+quality_status: UNVALIDATED_ON_HCMAIC

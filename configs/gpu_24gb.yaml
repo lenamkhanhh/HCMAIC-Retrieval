@@ -1,0 +1,10 @@
+extends: batch1_kaggle_v5.yaml
+models:
+  reranker:
+    provider: cross_encoder
+    model_id: BAAI/bge-reranker-v2-m3
+    top_n: 50
+  qa:
+    enabled: true
+    provider: qwen3vl
+    model_id: Qwen/Qwen3-VL-2B-Instruct

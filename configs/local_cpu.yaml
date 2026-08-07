@@ -1,0 +1,6 @@
+extends: batch1_kaggle_v5.yaml
+models:
+  reranker:
+    provider: identity
+  qa:
+    enabled: false

@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from hcmaic_retrieval.contracts import Candidate, FrameRecord, KISQuery
 from hcmaic_retrieval.fusion import diversify_candidates, weighted_rrf
+from hcmaic_retrieval.reranking import IdentityReranker, Reranker
 from hcmaic_retrieval.retrieval.indexes import RetrievalHit
 
 
@@ -66,6 +67,7 @@ class KISRetriever:
         rrf_k: int,
         max_per_video: int,
         min_frame_gap: int,
+        reranker: Reranker | None = None,
     ) -> None:
         if dense.dimension != encoder.dimension:
             raise ValueError(
@@ -79,6 +81,7 @@ class KISRetriever:
         self.rrf_k = rrf_k
         self.max_per_video = max_per_video
         self.min_frame_gap = min_frame_gap
+        self.reranker = reranker or IdentityReranker()
 
     def search(self, query: KISQuery) -> KISSearchResponse:
         candidate_k = max(query.top_k * 10, query.top_k)
@@ -104,8 +107,9 @@ class KISRetriever:
             rrf_k=self.rrf_k,
             top_k=candidate_k,
         )
+        reranked = self.reranker.rerank(query.text or "", fused)
         selected = diversify_candidates(
-            fused,
+            reranked,
             top_k=query.top_k,
             max_per_video=self.max_per_video,
             min_frame_gap=self.min_frame_gap,

@@ -31,6 +31,7 @@ class QAResponse(BaseModel):
     needs_human_review: bool
     answer_provider: str | None = None
     answer_provider_version: str | None = None
+    failure_reason: str | None = None
 
 
 class AnswerProvider(Protocol):
@@ -96,7 +97,19 @@ class QAEngine:
                 evidence=evidence,
                 needs_human_review=True,
             )
-        answer, confidence = self.answerer.answer(query.question, evidence)
+        try:
+            answer, confidence = self.answerer.answer(query.question, evidence)
+        except (RuntimeError, FileNotFoundError, PermissionError) as error:
+            return QAResponse(
+                query_id=query.query_id,
+                answer=None,
+                confidence=None,
+                evidence=evidence,
+                needs_human_review=True,
+                answer_provider=self.answerer.name,
+                answer_provider_version=self.answerer.version,
+                failure_reason=str(error),
+            )
         if not answer.strip():
             return QAResponse(
                 query_id=query.query_id,
@@ -116,4 +129,3 @@ class QAEngine:
             answer_provider=self.answerer.name,
             answer_provider_version=self.answerer.version,
         )
-

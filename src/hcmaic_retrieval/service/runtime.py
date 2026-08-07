@@ -8,13 +8,19 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
-from hcmaic_retrieval.artifacts.kaggle import validate_kaggle_bundle
-from hcmaic_retrieval.config import AppConfig
+from hcmaic_retrieval.artifacts.kaggle import load_parquet_rows, validate_kaggle_bundle
+from hcmaic_retrieval.channels import (
+    ASRSegment,
+    ObjectDetection,
+    build_asr_index,
+    build_object_index,
+)
+from hcmaic_retrieval.config import AppConfig, DatasetConfig
 from hcmaic_retrieval.contracts import FrameRecord, KISQuery
 from hcmaic_retrieval.providers import ProviderStatus
 from hcmaic_retrieval.providers.siglip2 import Siglip2Encoder
 from hcmaic_retrieval.retrieval import BM25Index, KISRetriever, NumpyDenseIndex
-from hcmaic_retrieval.retrieval.kis import KISSearchResponse
+from hcmaic_retrieval.retrieval.kis import KISSearchResponse, LexicalSearchIndex
 from hcmaic_retrieval.retrieval.persisted import Bm25sIndex, FaissDenseIndex
 from hcmaic_retrieval.tasks.qa import QAEngine, QAQuery, QAResponse
 from hcmaic_retrieval.tasks.trake import TRAKEEngine, TRAKEQuery, TRAKEResponse
@@ -157,6 +163,12 @@ def build_demo_runtime() -> PipelineRuntime:
                 available=False,
                 reason="ASR artifact is absent in demo profile",
             ),
+            "shot_text": ProviderStatus(
+                name="shot_text",
+                version="not-built",
+                available=False,
+                reason="shot-text artifact is absent in demo profile",
+            ),
             "qa": ProviderStatus(
                 name="qa",
                 version="evidence-only",
@@ -167,6 +179,78 @@ def build_demo_runtime() -> PipelineRuntime:
         artifact_version="demo-v1",
         quality_status="UNVALIDATED_ON_HCMAIC",
     )
+
+
+def load_optional_channel_indexes(
+    *, dataset: DatasetConfig, frames: list[FrameRecord]
+) -> tuple[dict[str, LexicalSearchIndex], dict[str, ProviderStatus]]:
+    """Load optional real Parquet channels; absent files stay explicitly disabled."""
+
+    indexes: dict[str, LexicalSearchIndex] = {}
+    statuses: dict[str, ProviderStatus] = {}
+
+    object_file = dataset.root / dataset.object_path if dataset.object_path else None
+    if object_file is not None and object_file.is_file():
+        detections = [ObjectDetection.model_validate(row) for row in load_parquet_rows(object_file)]
+        indexes["object"] = build_object_index(
+            detections=detections,
+            catalog={frame.frame_uid: frame for frame in frames},
+            minimum_confidence=0.5,
+        )
+        statuses["object"] = ProviderStatus(
+            name="object", version=object_file.name, available=True, device="artifact"
+        )
+    else:
+        statuses["object"] = ProviderStatus(
+            name="object",
+            version="not-loaded",
+            available=False,
+            reason="object artifact is not configured or does not exist",
+        )
+
+    asr_file = dataset.root / dataset.asr_path if dataset.asr_path else None
+    if asr_file is not None and asr_file.is_file():
+        segments = [ASRSegment.model_validate(row) for row in load_parquet_rows(asr_file)]
+        indexes["asr"] = build_asr_index(
+            segments=segments,
+            frames=frames,
+            maximum_distance_ms=5000,
+        )
+        statuses["asr"] = ProviderStatus(
+            name="asr", version=asr_file.name, available=True, device="artifact"
+        )
+    else:
+        statuses["asr"] = ProviderStatus(
+            name="asr",
+            version="not-loaded",
+            available=False,
+            reason="ASR artifact is not configured or does not exist",
+        )
+
+    shot_file = dataset.root / dataset.shot_text_path if dataset.shot_text_path else None
+    if shot_file is not None and shot_file.is_file():
+        shot_documents: dict[str, str] = {}
+        for row in load_parquet_rows(shot_file):
+            dense_row = int(row["first_faiss_id"])
+            if dense_row < 0 or dense_row >= len(frames):
+                raise ValueError(f"shot_text first_faiss_id out of range: {dense_row}")
+            text = str(row.get("text") or "").strip()
+            if text:
+                shot_documents[frames[dense_row].frame_uid] = text
+        indexes["shot_text"] = BM25Index(
+            channel="shot_text", documents=shot_documents
+        )
+        statuses["shot_text"] = ProviderStatus(
+            name="shot_text", version=shot_file.name, available=True, device="artifact"
+        )
+    else:
+        statuses["shot_text"] = ProviderStatus(
+            name="shot_text",
+            version="not-loaded",
+            available=False,
+            reason="shot text artifact is not configured or does not exist",
+        )
+    return indexes, statuses
 
 
 def build_batch1_runtime(config: AppConfig, *, device: str = "cpu") -> PipelineRuntime:
@@ -188,7 +272,7 @@ def build_batch1_runtime(config: AppConfig, *, device: str = "cpu") -> PipelineR
         frames=report.catalog,
         channel="visual",
     )
-    lexical: dict[str, Bm25sIndex] = {}
+    lexical: dict[str, LexicalSearchIndex] = {}
     ocr_path = (
         config.dataset.root / config.dataset.ocr_bm25_path
         if config.dataset.ocr_bm25_path is not None
@@ -202,6 +286,10 @@ def build_batch1_runtime(config: AppConfig, *, device: str = "cpu") -> PipelineR
             frame_uids=[frame.frame_uid for frame in ocr_frames],
             texts=[frame.ocr_text or "" for frame in ocr_frames],
         )
+    optional_indexes, optional_statuses = load_optional_channel_indexes(
+        dataset=config.dataset, frames=report.catalog
+    )
+    lexical.update(optional_indexes)
     kis = KISRetriever(
         encoder=encoder,
         dense=dense,
@@ -224,18 +312,9 @@ def build_batch1_runtime(config: AppConfig, *, device: str = "cpu") -> PipelineR
             reason=None if ocr_available else "OCR BM25 artifact is absent",
             device="cpu" if ocr_available else None,
         ),
-        "object": ProviderStatus(
-            name="object",
-            version="not-loaded",
-            available=False,
-            reason="object artifact is not configured",
-        ),
-        "asr": ProviderStatus(
-            name="asr",
-            version="not-loaded",
-            available=False,
-            reason="ASR artifact is not configured",
-        ),
+        "object": optional_statuses["object"],
+        "asr": optional_statuses["asr"],
+        "shot_text": optional_statuses["shot_text"],
         "qa": ProviderStatus(
             name="qa",
             version="evidence-only",

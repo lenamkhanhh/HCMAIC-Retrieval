@@ -29,3 +29,35 @@ def test_config_rejects_parent_traversal_for_artifact_paths() -> None:
             }
         )
 
+
+def test_config_profile_can_extend_a_base_file(tmp_path) -> None:
+    base = tmp_path / "base.yaml"
+    child = tmp_path / "child.yaml"
+    base.write_text(
+        """
+dataset:
+  version: fixture-v1
+  root: D:/data
+  metadata_path: meta.parquet
+  dense_index_path: index.faiss
+retrieval:
+  candidate_k: 100
+  weights:
+    visual: 1.0
+""".strip(),
+        encoding="utf-8",
+    )
+    child.write_text(
+        """
+extends: base.yaml
+retrieval:
+  candidate_k: 250
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config(child)
+
+    assert config.dataset.version == "fixture-v1"
+    assert config.retrieval.candidate_k == 250
+    assert config.retrieval.weights["visual"] == 1.0

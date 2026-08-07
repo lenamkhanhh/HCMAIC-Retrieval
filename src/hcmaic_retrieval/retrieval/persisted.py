@@ -72,6 +72,13 @@ class Bm25sIndex:
         self.channel = channel
         self._frame_uids = tuple(frame_uids)
         self._texts = tuple(texts) if texts is not None else None
+        scores = getattr(retriever, "scores", None)
+        document_count = scores.get("num_docs") if isinstance(scores, dict) else None
+        if document_count is not None and int(document_count) != len(self._frame_uids):
+            raise ValueError(
+                f"BM25 index has {document_count} documents but mapping has "
+                f"{len(self._frame_uids)} rows"
+            )
         if self._texts is not None and len(self._texts) != len(self._frame_uids):
             raise ValueError("BM25 texts must align with frame_uids")
 
@@ -133,4 +140,3 @@ class Bm25sIndex:
                 )
             )
         return hits
-

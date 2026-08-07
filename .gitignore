@@ -14,12 +14,12 @@ build/
 !.env.example
 
 # Generated ML assets never belong in Git.
-artifacts/
-data/
-models/
-weights/
-outputs/
-runs/
+/artifacts/
+/data/
+/models/
+/weights/
+/outputs/
+/runs/
 *.faiss
 *.index
 *.npy
@@ -36,4 +36,3 @@ runs/
 kaggle.json
 access_token
 access_token.*
-

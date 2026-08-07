@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict
 
 from hcmaic_retrieval.contracts import Candidate, FrameRecord, KISQuery
 from hcmaic_retrieval.fusion import diversify_candidates, weighted_rrf
-from hcmaic_retrieval.retrieval.indexes import BM25Index, NumpyDenseIndex, RetrievalHit
+from hcmaic_retrieval.retrieval.indexes import RetrievalHit
 
 
 class MultimodalEncoder(Protocol):
@@ -23,6 +23,21 @@ class MultimodalEncoder(Protocol):
     def encode_text(self, text: str) -> NDArray[np.floating]: ...
 
     def encode_image(self, path: Path) -> NDArray[np.floating]: ...
+
+
+class DenseSearchIndex(Protocol):
+    channel: str
+    dimension: int
+
+    def search(
+        self, query_vector: NDArray[np.floating], *, top_k: int
+    ) -> list[RetrievalHit]: ...
+
+
+class LexicalSearchIndex(Protocol):
+    channel: str
+
+    def search(self, query: str, *, top_k: int) -> list[RetrievalHit]: ...
 
 
 class KISSearchResponse(BaseModel):
@@ -44,8 +59,8 @@ class KISRetriever:
         self,
         *,
         encoder: MultimodalEncoder,
-        dense: NumpyDenseIndex,
-        lexical: Mapping[str, BM25Index],
+        dense: DenseSearchIndex,
+        lexical: Mapping[str, LexicalSearchIndex],
         catalog: Mapping[str, FrameRecord],
         weights: Mapping[str, float],
         rrf_k: int,

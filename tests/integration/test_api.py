@@ -55,3 +55,17 @@ def test_trake_and_qa_endpoints_share_the_same_evidence_catalog() -> None:
     assert qa.json()["needs_human_review"] is True
     assert qa.json()["evidence"]
 
+
+def test_frame_and_timeline_endpoints_fail_closed_for_unknown_ids() -> None:
+    client = TestClient(create_app(build_demo_runtime()))
+
+    frame = client.get("/v1/frames/V1:10")
+    timeline = client.get("/v1/videos/V1/timeline")
+    missing_frame = client.get("/v1/frames/missing:1")
+    missing_video = client.get("/v1/videos/missing/timeline")
+
+    assert frame.status_code == 200
+    assert frame.json()["source_frame_idx"] == 10
+    assert [item["source_frame_idx"] for item in timeline.json()["frames"]] == [10, 50]
+    assert missing_frame.status_code == 404
+    assert missing_video.status_code == 404
